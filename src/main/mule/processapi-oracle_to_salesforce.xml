@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:salesforce-system-api="http://www.mulesoft.org/schema/mule/salesforce-system-api" xmlns:oracle-system-api="http://www.mulesoft.org/schema/mule/oracle-system-api"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:os="http://www.mulesoft.org/schema/mule/os" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/oracle-system-api http://www.mulesoft.org/schema/mule/oracle-system-api/current/mule-oracle-system-api.xsd
+http://www.mulesoft.org/schema/mule/salesforce-system-api http://www.mulesoft.org/schema/mule/salesforce-system-api/current/mule-salesforce-system-api.xsd">
+	<http:request-config name="HTTP_Request_configuration_Oracle" doc:name="HTTP Request configuration" doc:id="b29c74bc-f061-4bca-a456-12f4ac4d3247" >
+		<http:request-connection host="localhost" port="8081" >
+			<reconnection >
+				<reconnect count="3" />
+			</reconnection>
+		</http:request-connection>
+	</http:request-config>
+	<http:request-config name="HTTP_Request_configuration_SFMC" doc:name="HTTP Request configuration" doc:id="c34b3d43-16ae-4cd6-926e-848466ce20fa" >
+		<http:request-connection host="localhost" port="8082" >
+			<reconnection >
+				<reconnect count="3" />
+			</reconnection>
+		</http:request-connection>
+	</http:request-config>
+	<oracle-system-api:config name="Oracle_SystemAPI_Config" doc:name="Oracle-SystemAPI Config" doc:id="5d15ed11-f16d-4247-b9b9-54335740be72" property_host="localhost" property_port="8081" property_protocol="HTTP" property_basePath="/api/"/>
+	<salesforce-system-api:config name="Salesforce_SystemAPI_Config" doc:name="Salesforce-SystemAPI Config" doc:id="686ad777-b999-4447-a164-8a88b613f092" property_host="localhost" property_port="8082" property_protocol="HTTP" property_basePath="/api/" />
+	<flow name="processapi-oracle_to_salesforceFlow" doc:id="c2f51fb8-9f94-4088-b086-04896bb5e936" >
+		<scheduler doc:name="Scheduler" doc:id="2212eab0-6070-49ed-aa32-0e7ed44a15ed" >
+			<scheduling-strategy >
+				<fixed-frequency frequency="30" timeUnit="SECONDS"/>
+			</scheduling-strategy>
+		</scheduler>
+		<oracle-system-api:get-employees doc:name="Get employees From Oracle" doc:id="de87d525-12fc-4e90-a971-6693d97e1ff7" config-ref="Oracle_SystemAPI_Config"/>
+		<logger level="INFO" doc:name="Start Logger" doc:id="497cffe9-ec3f-42bc-86bf-2239fb088576" message="#[payload]"/>
+		<os:retrieve doc:name="Retrieve Last Updated Date" doc:id="3a26c286-683b-4b45-8823-2de100d3fed7" key="lastUpdatedDate" target="lastUpdatedDate">
+			<os:default-value ><![CDATA[17-01-2022 05:00:00 AM]]></os:default-value>
+		</os:retrieve>
+		<ee:transform doc:name="Filter Employees on Timestamp" doc:id="d6df48e3-3e56-47e5-9812-9a84e58924b0" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload filter ((item, index) -> (item.system_timestamp > vars.lastUpdatedDate as String))]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<choice doc:name="Choice" doc:id="85153319-243b-4d37-a9b2-56250e2011df" >
+			<when expression="#[!isEmpty(payload)]">
+				<os:store doc:name="Storing Last Updated Date" doc:id="e2c4bfd1-f50e-4573-a383-471408a59ad8" key="lastUpdatedDate">
+			<os:value><![CDATA[#[max(payload.system_timestamp)]]]></os:value>
+		</os:store>
+				<salesforce-system-api:create-employee doc:name="Create employees in Salesforce" doc:id="8c14da7c-15fe-4ecf-b2dc-e3eca4446b94" config-ref="Salesforce_SystemAPI_Config" />
+			</when>
+			<otherwise>
+				<set-payload value="Salesforce is already up to date." doc:name="Salesforce is already up to date." doc:id="a3322d56-3afe-4bf2-a4bd-792367f3a6cd" />
+			</otherwise>
+		</choice>
+		<logger level="INFO" doc:name="End Logger" doc:id="5d6accb9-3475-432c-ba4c-27345d54f449" message="#[payload]" />
+	</flow>
+</mule>
